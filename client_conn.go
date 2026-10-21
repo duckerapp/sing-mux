@@ -18,6 +18,7 @@ type clientConn struct {
 	destination    M.Socksaddr
 	requestWritten bool
 	responseRead   bool
+	onRefused      func(message string) // ducker: Options.OnStreamRefused
 }
 
 func (c *clientConn) NeedHandshake() bool {
@@ -30,6 +31,9 @@ func (c *clientConn) readResponse() error {
 		return err
 	}
 	if response.Status == statusError {
+		if c.onRefused != nil { // ducker
+			c.onRefused(response.Message)
+		}
 		return E.New("remote error: ", response.Message)
 	}
 	return nil
@@ -111,6 +115,7 @@ type clientPacketConn struct {
 	requestWritten  bool
 	responseRead    bool
 	readWaitOptions N.ReadWaitOptions
+	onRefused       func(message string) // ducker: Options.OnStreamRefused
 }
 
 func (c *clientPacketConn) NeedHandshake() bool {
@@ -123,6 +128,9 @@ func (c *clientPacketConn) readResponse() error {
 		return err
 	}
 	if response.Status == statusError {
+		if c.onRefused != nil { // ducker
+			c.onRefused(response.Message)
+		}
 		return E.New("remote error: ", response.Message)
 	}
 	return nil
@@ -290,6 +298,7 @@ type clientPacketAddrConn struct {
 	requestWritten  bool
 	responseRead    bool
 	readWaitOptions N.ReadWaitOptions
+	onRefused       func(message string) // ducker: Options.OnStreamRefused
 }
 
 func (c *clientPacketAddrConn) NeedHandshake() bool {
@@ -302,6 +311,9 @@ func (c *clientPacketAddrConn) readResponse() error {
 		return err
 	}
 	if response.Status == statusError {
+		if c.onRefused != nil { // ducker
+			c.onRefused(response.Message)
+		}
 		return E.New("remote error: ", response.Message)
 	}
 	return nil

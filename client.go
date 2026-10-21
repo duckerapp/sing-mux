@@ -31,6 +31,8 @@ type Client struct {
 	brutal         BrutalOptions
 	srtt           atomic.Int64 // ducker: сглаженная задержка до сервера по пингам, нс (health.go)
 	health         healthConfig // ducker: пороги проверки сессий (health.go)
+	// ducker: Options.OnStreamRefused
+	onRefused func(message string)
 }
 
 type Options struct {
@@ -43,6 +45,9 @@ type Options struct {
 	Padding        bool
 	TCPTimeout     time.Duration
 	Brutal         BrutalOptions
+	// ducker: called with the server's message when it refuses a stream, typically because it
+	// could not reach the destination (D-336). The refusal still reaches the reader as an error.
+	OnStreamRefused func(message string)
 }
 
 type BrutalOptions struct {
@@ -62,6 +67,8 @@ func NewClient(options Options) (*Client, error) {
 		tcpTimeout:     options.TCPTimeout,
 		brutal:         options.Brutal,
 		health:         defaultHealth, // ducker
+		// ducker: D-336
+		onRefused: options.OnStreamRefused,
 	}
 	if client.dialer == nil {
 		client.dialer = N.SystemDialer
@@ -97,7 +104,7 @@ func (c *Client) DialContext(ctx context.Context, network string, destination M.
 		if err != nil {
 			return nil, err
 		}
-		conn := &clientConn{Conn: stream, destination: destination}
+		conn := &clientConn{Conn: stream, destination: destination, onRefused: c.onRefused}
 		// h2mux and yamux support half-close; expose CloseWrite so callers
 		// send END_STREAM / FIN instead of falling back to a full close
 		// (which is RST_STREAM on h2mux and drops in-flight data). smux v1
@@ -112,7 +119,7 @@ func (c *Client) DialContext(ctx context.Context, network string, destination M.
 			return nil, err
 		}
 		extendedConn := bufio.NewExtendedConn(stream)
-		return &clientPacketConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination}, nil
+		return &clientPacketConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination, onRefused: c.onRefused}, nil
 	default:
 		return nil, E.Extend(N.ErrUnknownNetwork, network)
 	}
@@ -124,7 +131,7 @@ func (c *Client) ListenPacket(ctx context.Context, destination M.Socksaddr) (net
 		return nil, err
 	}
 	extendedConn := bufio.NewExtendedConn(stream)
-	return &clientPacketAddrConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination}, nil
+	return &clientPacketAddrConn{AbstractConn: extendedConn, conn: extendedConn, destination: destination, onRefused: c.onRefused}, nil
 }
 
 func (c *Client) openStream(ctx context.Context) (net.Conn, error) {
